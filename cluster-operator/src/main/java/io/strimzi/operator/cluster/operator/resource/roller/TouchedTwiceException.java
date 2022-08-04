@@ -4,11 +4,8 @@
  */
 package io.strimzi.operator.cluster.operator.resource.roller;
 
-interface Processor {
-
-    void deletePod(int broker);
-
-    void awaitStable(int broker);
-
-    void reconfigure(int broker);
+public class TouchedTwiceException extends RuntimeException {
+    public TouchedTwiceException(String message) {
+        super(message);
+    }
 }
