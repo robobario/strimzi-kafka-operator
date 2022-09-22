@@ -115,10 +115,11 @@ public class ClusterOperator extends AbstractVerticle {
         CompositeFuture.join(startFutures)
                 .compose(f -> {
                     LOGGER.info("Setting up periodic reconciliation for namespace {}", namespace);
-                    this.reconcileTimer = vertx.setPeriodic(this.config.getReconciliationIntervalMs(), res2 -> {
+                    final long reconciliationIntervalMs = this.config.getReconciliationIntervalMs();
+                    this.reconcileTimer = vertx.setPeriodic(reconciliationIntervalMs, res2 -> {
                         if (!config.isPodSetReconciliationOnly()) {
-                            LOGGER.info("Triggering periodic reconciliation for namespace {}", namespace);
-                            reconcileAll("timer");
+                            LOGGER.info("Triggering periodic reconciliation for namespace {} with spread millis {}", namespace, reconciliationIntervalMs);
+                            reconcileAll("timer", reconciliationIntervalMs);
                         }
                     });
 
@@ -166,16 +167,16 @@ public class ClusterOperator extends AbstractVerticle {
     /**
       Periodical reconciliation (in case we lost some event)
      */
-    private void reconcileAll(String trigger) {
+    private void reconcileAll(String trigger, long spreadOverMilli) {
         if (!config.isPodSetReconciliationOnly()) {
             Handler<AsyncResult<Void>> ignore = ignored -> {
             };
-            kafkaAssemblyOperator.reconcileAll(trigger, namespace, ignore);
-            kafkaMirrorMakerAssemblyOperator.reconcileAll(trigger, namespace, ignore);
-            kafkaConnectAssemblyOperator.reconcileAll(trigger, namespace, ignore);
-            kafkaMirrorMaker2AssemblyOperator.reconcileAll(trigger, namespace, ignore);
-            kafkaBridgeAssemblyOperator.reconcileAll(trigger, namespace, ignore);
-            kafkaRebalanceAssemblyOperator.reconcileAll(trigger, namespace, ignore);
+            kafkaAssemblyOperator.reconcileAll(trigger, namespace, ignore, spreadOverMilli);
+            kafkaMirrorMakerAssemblyOperator.reconcileAll(trigger, namespace, ignore, spreadOverMilli);
+            kafkaConnectAssemblyOperator.reconcileAll(trigger, namespace, ignore, spreadOverMilli);
+            kafkaMirrorMaker2AssemblyOperator.reconcileAll(trigger, namespace, ignore, spreadOverMilli);
+            kafkaBridgeAssemblyOperator.reconcileAll(trigger, namespace, ignore, spreadOverMilli);
+            kafkaRebalanceAssemblyOperator.reconcileAll(trigger, namespace, ignore, spreadOverMilli);
         }
     }
 

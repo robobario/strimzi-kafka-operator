@@ -11,11 +11,15 @@ import io.vertx.core.AsyncResult;
 import io.vertx.core.CompositeFuture;
 import io.vertx.core.Future;
 import io.vertx.core.Handler;
+import io.vertx.core.Promise;
+import io.vertx.core.Vertx;
 
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
+import java.util.stream.Collectors;
 
 /**
  * Abstraction of an operator which is driven by resources of a given {@link #kind()}.
@@ -27,6 +31,9 @@ import java.util.Set;
  * An operator instance is not bound to a particular namespace. Rather the namespace is passed as a parameter.
  */
 public interface Operator {
+
+    Comparator<NamespaceAndName> BY_NAMESPACE_THEN_NAME = Comparator.comparing(NamespaceAndName::getNamespace).thenComparing(NamespaceAndName::getName);
+
 
     /**
      * The Kubernetes kind of the resource "consumed" by this operator
@@ -48,6 +55,27 @@ public interface Operator {
      */
     Future<Void> reconcile(Reconciliation reconciliation);
 
+    private Future<Void> delayedReconcile(Reconciliation reconciliation, long delayMillis) {
+        if (delayMillis == 0) {
+            return reconcile(reconciliation);
+        }
+        final Promise<Void> promise = Promise.promise();
+        Vertx.vertx().setTimer(delayMillis, id -> {
+            try {
+                reconcile(reconciliation).onComplete(voidAsyncResult -> {
+                    if (voidAsyncResult.failed()) {
+                        promise.fail(voidAsyncResult.cause());
+                    } else {
+                        promise.complete();
+                    }
+                });
+            } catch (Exception e) {
+                promise.fail(e);
+            }
+        });
+        return promise.future();
+    }
+
     /**
      * Triggers the asynchronous reconciliation of all resources which this operator consumes.
      * The resources to reconcile are identified by {@link #allResourceNames(String)}.
@@ -56,9 +84,21 @@ public interface Operator {
      * @param handler Handler called on completion.
      */
     default void reconcileAll(String trigger, String namespace, Handler<AsyncResult<Void>> handler) {
+        reconcileAll(trigger, namespace, handler, 0);
+    }
+
+    /**
+     * Triggers the asynchronous reconciliation of all resources which this operator consumes.
+     * The resources to reconcile are identified by {@link #allResourceNames(String)}.
+     * @param trigger The cause of this reconciliation (for logging).
+     * @param namespace The namespace to reconcile, or {@code *} to reconcile across all namespaces.
+     * @param handler Handler called on completion.
+     * @param spreadOverMillis spread reconciliation of resources evenly over this duration.
+     */
+    default void reconcileAll(String trigger, String namespace, Handler<AsyncResult<Void>> handler, long spreadOverMillis) {
         allResourceNames(namespace).onComplete(ar -> {
             if (ar.succeeded()) {
-                reconcileThese(trigger, ar.result(), namespace, handler);
+                reconcileThese(trigger, ar.result(), namespace, handler, spreadOverMillis);
                 metrics().periodicReconciliationsCounter(namespace).increment();
             } else {
                 handler.handle(ar.map((Void) null));
@@ -67,6 +107,10 @@ public interface Operator {
     }
 
     default void reconcileThese(String trigger, Set<NamespaceAndName> desiredNames, String namespace, Handler<AsyncResult<Void>> handler) {
+        reconcileThese(trigger, desiredNames, namespace, handler, 0);
+    }
+
+    default void reconcileThese(String trigger, Set<NamespaceAndName> desiredNames, String namespace, Handler<AsyncResult<Void>> handler, long spreadOverMillis) {
         if (namespace.equals("*")) {
             metrics().resetResourceAndPausedResourceCounters();
         } else {
@@ -77,10 +121,14 @@ public interface Operator {
         if (desiredNames.size() > 0) {
             @SuppressWarnings({ "rawtypes" }) // Has to use Raw type because of the CompositeFuture
             List<Future> futures = new ArrayList<>();
-            for (NamespaceAndName resourceRef : desiredNames) {
+            final List<NamespaceAndName> ordered = desiredNames.stream().sorted(BY_NAMESPACE_THEN_NAME).collect(Collectors.toList());
+            final int size = ordered.size();
+            final long delayPerItem = spreadOverMillis / size;
+            for (int i = 0; i < size; i++) {
+                final NamespaceAndName resourceRef = ordered.get(i);
                 metrics().resourceCounter(resourceRef.getNamespace()).getAndIncrement();
                 Reconciliation reconciliation = new Reconciliation(trigger, kind(), resourceRef.getNamespace(), resourceRef.getName());
-                futures.add(reconcile(reconciliation));
+                futures.add(delayedReconcile(reconciliation, i * delayPerItem));
             }
             CompositeFuture.join(futures).map((Void) null).onComplete(handler);
         } else {
