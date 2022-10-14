@@ -4,6 +4,9 @@
  */
 package io.strimzi.operator.cluster.operator.resource;
 
+/**
+ * Thrown in case the Preconditions for the KafkaRoller fails.
+ */
 public class KafkaRollerPreconditionFailedException extends RuntimeException {
 
     public KafkaRollerPreconditionFailedException(String s) {
