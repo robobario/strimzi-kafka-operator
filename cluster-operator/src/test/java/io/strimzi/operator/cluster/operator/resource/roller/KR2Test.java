@@ -54,7 +54,7 @@ class KR2Test {
             @ForAll @IntRange(min = 1, max = 4) int numPods,
             @ForAll("sequences") ActionSequence<KR2> sequence) {
         var observations = IntStream.range(0, numPods).boxed()
-                .collect(Collectors.toMap(i -> i, i -> new Observation(true, true, true,true, true, true, true, true)));
+                .collect(Collectors.toMap(i -> i, i -> new Observation(true, true, true, true, true, true, true, true)));
         KR2 roller = new KR2(numPods, new MockObserver(observations), new MockProcessor(observations));
         sequence.run(roller);
     }

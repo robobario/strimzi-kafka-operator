@@ -4,7 +4,6 @@
  */
 package io.strimzi.operator.cluster.operator.resource.roller;
 
-import java.util.Comparator;
 import java.util.List;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
@@ -18,6 +17,8 @@ public class KR2 {
 
     private final int numPods;
     final Observer observer;
+
+    final CommandPlanner planner;
     final Processor processor;
     private final List<Context> contexts;
 
@@ -25,47 +26,36 @@ public class KR2 {
         this.numPods = numPods;
         this.observer = observer;
         this.processor = processor;
+        this.planner = new CommandPlannerImpl();
         this.contexts = IntStream.range(0, numPods).boxed()
                 .map(Context::new)
                 .collect(Collectors.toList());
     }
 
     Future<Void> roll() {
-
-        // TODO still need to support roll-controller last
-
         while (true) {
-            int processed = processOne();
-            if (processed == -1) {
-                break;
-            }
+            if (!processOne()) break;
         }
         // TODO close Admin client
         return null;
     }
 
-    int processOne() {
+    boolean processOne() {
+        RollCommand command = observeAndPlanNextCommand();
+        if (command.getCommand() == RollCommand.Command.END_ROLL) {
+            return false;
+        } else if (command.getCommand() == RollCommand.Command.PROCESS_CONTEXT){
+            process(command.getContextToActOn());
+        } else {
+            throw new IllegalArgumentException("unknown roll command " + command.getCommand());
+        }
+        return true;
+    }
+
+    RollCommand observeAndPlanNextCommand() {
         var observations = observer.observe(contexts);
         contexts.forEach(c -> c.classify(observations.get(c.brokerId())));
-        contexts.sort(Comparator.comparing((Context ctx) -> ctx.state().priority())
-                .thenComparing(Context::brokerId));
-        Context firstContext = contexts.get(0);
-        var worstState = firstContext.state();
-        final int processed;
-        if (worstState.isHealthy()) {
-            // Even the worst state is healthy => We're done
-            processed = -1;
-        } else if (worstState == State.STALE_BLOCKED) {
-            // TODO sleep and retry
-            processed = -2;
-        } else {
-            // Get all the contexts whose state is equally the worst
-            if (process(firstContext)) {
-                firstContext.touched();
-            }
-            processed = firstContext.brokerId();
-        }
-        return processed;
+        return planner.planNextCommand(contexts);
     }
 
     private boolean process(Context context) {
