@@ -2,7 +2,7 @@
  * Copyright Strimzi authors.
  * License: Apache License 2.0 (see the file LICENSE or http://apache.org/licenses/LICENSE-2.0.html).
  */
-package io.strimzi.operator.cluster.operator.resource;
+package io.strimzi.operator.cluster.operator.resource.roller;
 
 import io.fabric8.kubernetes.api.model.Pod;
 import io.fabric8.kubernetes.api.model.PodBuilder;
@@ -11,6 +11,8 @@ import io.strimzi.api.kafka.model.KafkaResources;
 import io.strimzi.operator.cluster.KafkaVersionTestUtils;
 import io.strimzi.operator.cluster.model.RestartReason;
 import io.strimzi.operator.cluster.model.RestartReasons;
+import io.strimzi.operator.cluster.operator.resource.KafkaBrokerConfigurationDiff;
+import io.strimzi.operator.cluster.operator.resource.KafkaBrokerLoggingConfigurationDiff;
 import io.strimzi.operator.cluster.operator.resource.events.KubernetesRestartEventPublisher;
 import io.strimzi.operator.common.BackOff;
 import io.strimzi.operator.common.DefaultAdminClientProvider;
@@ -137,7 +139,7 @@ public class KafkaRollerTest {
         // What does/did the ZK algo do?
         doFailingRollingRestart(testContext, kafkaRoller,
                 asList(0, 1, 2, 3, 4),
-                KafkaRoller.FatalProblem.class, "Error while waiting for restarted pod c-kafka-0 to become ready",
+                QueuingKafkaRoller.FatalProblem.class, "Error while waiting for restarted pod c-kafka-0 to become ready",
                 singletonList(0));
         // TODO assert subsequent rolls
     }
@@ -151,14 +153,14 @@ public class KafkaRollerTest {
         // On the first reconciliation we expect it to abort when it gets to pod 1
         doFailingRollingRestart(testContext, kafkaRoller,
                 asList(0, 1, 2, 3, 4),
-                KafkaRoller.FatalProblem.class, "Error while waiting for restarted pod c-kafka-1 to become ready",
+                QueuingKafkaRoller.FatalProblem.class, "Error while waiting for restarted pod c-kafka-1 to become ready",
                 asList(1));
         // On the next reconciliation only pod 2 (controller) would need rolling, and we expect it to fail in the same way
         kafkaRoller = rollerWithControllers(podOps, 2);
         clearRestarted();
         doFailingRollingRestart(testContext, kafkaRoller,
                 asList(2, 3, 4),
-                KafkaRoller.FatalProblem.class, "Error while waiting for restarted pod c-kafka-1 to become ready",
+                QueuingKafkaRoller.FatalProblem.class, "Error while waiting for restarted pod c-kafka-1 to become ready",
                 emptyList());
     }
 
@@ -171,14 +173,14 @@ public class KafkaRollerTest {
         // On the first reconciliation we expect it to abort when it gets to pod 3 (but not 2, which is controller)
         doFailingRollingRestart(testContext, kafkaRoller,
                 asList(0, 1, 2, 3, 4),
-                KafkaRoller.FatalProblem.class, "Error while waiting for restarted pod c-kafka-3 to become ready",
+                QueuingKafkaRoller.FatalProblem.class, "Error while waiting for restarted pod c-kafka-3 to become ready",
                 asList(3));
         // On the next reconciliation only pods 2 (controller) and 4 would need rolling, and we expect it to fail in the same way
         kafkaRoller = rollerWithControllers(podOps, 2);
         clearRestarted();
         doFailingRollingRestart(testContext, kafkaRoller,
                 asList(0, 1, 2, 4),
-                KafkaRoller.FatalProblem.class, "Error while waiting for restarted pod c-kafka-3 to become ready",
+                QueuingKafkaRoller.FatalProblem.class, "Error while waiting for restarted pod c-kafka-3 to become ready",
                 emptyList());
     }
 
@@ -191,14 +193,14 @@ public class KafkaRollerTest {
         // On the first reconciliation we expect it to fail when rolling the controller (i.e. as rolling all the rest)
         doFailingRollingRestart(testContext, kafkaRoller,
                 asList(0, 1, 2, 3, 4),
-                KafkaRoller.FatalProblem.class, "Error while waiting for restarted pod c-kafka-2 to become ready",
+                QueuingKafkaRoller.FatalProblem.class, "Error while waiting for restarted pod c-kafka-2 to become ready",
                 asList(0, 1, 3, 4, 2));
         // On the next reconciliation only pod 2 would need rolling, and we expect it to fail in the same way
         kafkaRoller = rollerWithControllers(podOps, 2);
         clearRestarted();
         doFailingRollingRestart(testContext, kafkaRoller,
                 singletonList(2),
-                KafkaRoller.FatalProblem.class, "Error while waiting for restarted pod c-kafka-2 to become ready",
+                QueuingKafkaRoller.FatalProblem.class, "Error while waiting for restarted pod c-kafka-2 to become ready",
                 singletonList(2));
     }
 
@@ -349,7 +351,7 @@ public class KafkaRollerTest {
             2);
         doFailingRollingRestart(testContext, kafkaRoller,
                 asList(0, 1, 2, 3, 4),
-                KafkaRoller.UnforceableProblem.class, "Pod c-kafka-1 is currently not rollable",
+                QueuingKafkaRoller.UnforceableProblem.class, "Pod c-kafka-1 is currently not rollable",
                 // Controller last, broker 1 never restarted
                 asList(0, 3, 4, 2));
         // TODO assert subsequent rolls
@@ -360,7 +362,7 @@ public class KafkaRollerTest {
         clearRestarted();
         doFailingRollingRestart(testContext, kafkaRoller,
                 singletonList(1),
-                KafkaRoller.UnforceableProblem.class, "Pod c-kafka-1 is currently not rollable",
+                QueuingKafkaRoller.UnforceableProblem.class, "Pod c-kafka-1 is currently not rollable",
                 // Controller last, broker 1 never restarted
                 emptyList());
     }
@@ -377,7 +379,7 @@ public class KafkaRollerTest {
             2);
         doFailingRollingRestart(testContext, kafkaRoller,
                 asList(0, 1, 2, 3, 4),
-                KafkaRoller.UnforceableProblem.class, "Pod c-kafka-2 is currently not rollable",
+                QueuingKafkaRoller.UnforceableProblem.class, "Pod c-kafka-2 is currently not rollable",
                 // We expect all non-controller pods to be rolled
                 asList(0, 1, 3, 4));
         clearRestarted();
@@ -388,7 +390,7 @@ public class KafkaRollerTest {
             2);
         doFailingRollingRestart(testContext, kafkaRoller,
                 singletonList(2),
-                KafkaRoller.UnforceableProblem.class, "Pod c-kafka-2 is currently not rollable",
+                QueuingKafkaRoller.UnforceableProblem.class, "Pod c-kafka-2 is currently not rollable",
                 // We expect all non-controller pods to be rolled
                 emptyList());
     }
@@ -398,7 +400,7 @@ public class KafkaRollerTest {
         PodOperator podOps = mockPodOps(podId -> succeededFuture());
         TestingKafkaRoller kafkaRoller = new TestingKafkaRoller(null, null, addPodNames(REPLICAS), podOps,
                 noException(), null,
-                noException(), noException(), podId -> podId == 1 ? new KafkaRoller.ForceableProblem("could not get config exception") : null,
+                noException(), noException(), podId -> podId == 1 ? new QueuingKafkaRoller.ForceableProblem("could not get config exception") : null,
             brokerId -> succeededFuture(true), 2);
         // The algorithm should carry on rolling the pods
         doSuccessfulRollingRestart(testContext, kafkaRoller,
@@ -412,7 +414,7 @@ public class KafkaRollerTest {
         PodOperator podOps = mockPodOps(podId -> succeededFuture());
         TestingKafkaRoller kafkaRoller = new TestingKafkaRoller(null, null, addPodNames(REPLICAS), podOps,
             noException(), null,
-            noException(), noException(), podId -> podId == controller ? new KafkaRoller.ForceableProblem("could not get config exception") : null,
+            noException(), noException(), podId -> podId == controller ? new QueuingKafkaRoller.ForceableProblem("could not get config exception") : null,
             brokerId -> succeededFuture(true), controller);
         // The algorithm should carry on rolling the pods
         doSuccessfulRollingRestart(testContext, kafkaRoller,
@@ -425,7 +427,7 @@ public class KafkaRollerTest {
         PodOperator podOps = mockPodOps(podId -> succeededFuture());
         TestingKafkaRoller kafkaRoller = new TestingKafkaRoller(null, null, addPodNames(REPLICAS), podOps,
                 noException(), null,
-                noException(), podId -> new KafkaRoller.ForceableProblem("could not get alter exception"), noException(),
+                noException(), podId -> new QueuingKafkaRoller.ForceableProblem("could not get alter exception"), noException(),
             brokerId -> succeededFuture(true), 2);
         // The algorithm should carry on rolling the pods
         doSuccessfulRollingRestart(testContext, kafkaRoller,
@@ -455,7 +457,7 @@ public class KafkaRollerTest {
             2);
         doFailingRollingRestart(testContext, kafkaRoller,
             asList(0, 1, 2, 3, 4),
-            KafkaRoller.ForceableProblem.class, "Pod c-kafka-2 is currently the controller and there are other pods still to roll",
+            QueuingKafkaRoller.ForceableProblem.class, "Pod c-kafka-2 is currently the controller and there are other pods still to roll",
             // We expect all non-controller pods to be rolled
             asList(0, 1, 4));
     }
@@ -569,7 +571,7 @@ public class KafkaRollerTest {
         return podOps;
     }
 
-    private class TestingKafkaRoller extends KafkaRoller {
+    private class TestingKafkaRoller extends QueuingKafkaRoller {
 
         int controllerCall;
         private final IdentityHashMap<Admin, Throwable> unclosedAdminClients;

@@ -26,7 +26,7 @@ import io.strimzi.operator.cluster.model.KafkaCluster;
 import io.strimzi.operator.cluster.model.ModelUtils;
 import io.strimzi.operator.cluster.model.RestartReason;
 import io.strimzi.operator.cluster.model.RestartReasons;
-import io.strimzi.operator.cluster.operator.resource.KafkaRoller;
+import io.strimzi.operator.cluster.operator.resource.roller.KafkaRollers;
 import io.strimzi.operator.cluster.operator.resource.ResourceOperatorSupplier;
 import io.strimzi.operator.cluster.operator.resource.StatefulSetOperator;
 import io.strimzi.operator.cluster.operator.resource.ZooKeeperRoller;
@@ -427,7 +427,7 @@ public class CaReconciler {
     }
 
     private Future<Void> rollKafkaBrokers(List<String> replicas, RestartReasons podRollReasons) {
-        return new KafkaRoller(
+        return KafkaRollers.migrationRoller(
                 reconciliation,
                 vertx,
                 podOperator,

@@ -2,7 +2,7 @@
  * Copyright Strimzi authors.
  * License: Apache License 2.0 (see the file LICENSE or http://apache.org/licenses/LICENSE-2.0.html).
  */
-package io.strimzi.operator.cluster.operator.resource;
+package io.strimzi.operator.cluster.operator.resource.roller;
 
 import java.io.IOException;
 import java.net.InetSocketAddress;
@@ -42,6 +42,8 @@ import io.strimzi.operator.cluster.model.KafkaVersion;
 import io.strimzi.operator.cluster.model.ModelUtils;
 import io.strimzi.operator.cluster.model.RestartReason;
 import io.strimzi.operator.cluster.model.RestartReasons;
+import io.strimzi.operator.cluster.operator.resource.KafkaBrokerConfigurationDiff;
+import io.strimzi.operator.cluster.operator.resource.KafkaBrokerLoggingConfigurationDiff;
 import io.strimzi.operator.cluster.operator.resource.events.KubernetesRestartEventPublisher;
 import io.strimzi.operator.common.AdminClientProvider;
 import io.strimzi.operator.common.BackOff;
@@ -104,11 +106,20 @@ import static java.util.Collections.singletonList;
  *     <li>even pods which aren't candidates for rolling are checked for readiness which partly avoids
  *     successive reconciliations each restarting a pod which never becomes ready</li>
  * </ul>
+ *
+ * <p>Deprecated</p>
+ *
+ * <p>
+ * This class is being incrementally reimplemented in {@link StateMachineKafkaRoller}, prefer to implement
+ * new rolling features/bugfixes in the new implementation if possible. This implementation's rollingRestart
+ * will be called redundantly after the state machine roller.
+ * </p>
  */
+@Deprecated
 @SuppressWarnings({"checkstyle:ClassFanOutComplexity", "checkstyle:ParameterNumber"})
-public class KafkaRoller {
+class QueuingKafkaRoller implements KafkaRoller {
 
-    private static final ReconciliationLogger LOGGER = ReconciliationLogger.create(KafkaRoller.class);
+    private static final ReconciliationLogger LOGGER = ReconciliationLogger.create(QueuingKafkaRoller.class);
 
     private final PodOperator podOperations;
     private final long pollingIntervalMs;
@@ -129,11 +140,11 @@ public class KafkaRoller {
     private final boolean allowReconfiguration;
     private Admin allClient;
 
-    public KafkaRoller(Reconciliation reconciliation, Vertx vertx, PodOperator podOperations,
-                       long pollingIntervalMs, long operationTimeoutMs, Supplier<BackOff> backOffSupplier, List<String> podList,
-                       Secret clusterCaCertSecret, Secret coKeySecret,
-                       AdminClientProvider adminClientProvider,
-                       Function<Integer, String> kafkaConfigProvider, String kafkaLogging, KafkaVersion kafkaVersion, boolean allowReconfiguration, KubernetesRestartEventPublisher eventsPublisher) {
+    public QueuingKafkaRoller(Reconciliation reconciliation, Vertx vertx, PodOperator podOperations,
+                              long pollingIntervalMs, long operationTimeoutMs, Supplier<BackOff> backOffSupplier, List<String> podList,
+                              Secret clusterCaCertSecret, Secret coKeySecret,
+                              AdminClientProvider adminClientProvider,
+                              Function<Integer, String> kafkaConfigProvider, String kafkaLogging, KafkaVersion kafkaVersion, boolean allowReconfiguration, KubernetesRestartEventPublisher eventsPublisher) {
         this.namespace = reconciliation.namespace();
         this.cluster = reconciliation.name();
         this.podList = podList;
@@ -189,10 +200,11 @@ public class KafkaRoller {
      * Asynchronously perform a rolling restart of some subset of the pods,
      * completing the returned Future when rolling is complete.
      * Which pods get rolled is determined by {@code podNeedsRestart}.
-     * The pods may not be rolled in id order, due to the {@linkplain KafkaRoller rolling algorithm}.
+     * The pods may not be rolled in id order, due to the {@linkplain QueuingKafkaRoller rolling algorithm}.
      * @param podNeedsRestart Predicate for determining whether a pod should be rolled.
      * @return A Future completed when rolling is complete.
      */
+    @Override
     public Future<Void> rollingRestart(Function<Pod, RestartReasons> podNeedsRestart) {
         this.podNeedsRestart = podNeedsRestart;
         Promise<Void> result = Promise.promise();

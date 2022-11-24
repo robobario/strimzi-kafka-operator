@@ -45,7 +45,7 @@ import io.strimzi.operator.cluster.model.RestartReason;
 import io.strimzi.operator.cluster.model.RestartReasons;
 import io.strimzi.operator.cluster.model.StorageDiff;
 import io.strimzi.operator.cluster.operator.resource.ConcurrentDeletionException;
-import io.strimzi.operator.cluster.operator.resource.KafkaRoller;
+import io.strimzi.operator.cluster.operator.resource.roller.KafkaRollers;
 import io.strimzi.operator.cluster.operator.resource.ResourceOperatorSupplier;
 import io.strimzi.operator.cluster.operator.resource.StatefulSetOperator;
 import io.strimzi.operator.cluster.operator.resource.events.KubernetesRestartEventPublisher;
@@ -415,7 +415,7 @@ public class KafkaReconciler {
     ) {
         return ReconcilerUtils.clientSecrets(reconciliation, secretOperator)
                 .compose(compositeFuture ->
-                        new KafkaRoller(
+                        KafkaRollers.migrationRoller(
                                 reconciliation,
                                 vertx,
                                 podOperator,
